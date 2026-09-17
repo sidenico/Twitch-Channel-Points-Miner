@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -13,9 +13,9 @@ import (
 
 func TestResolveAppPathsPrefersDataDirFlag(t *testing.T) {
 	dir := t.TempDir()
-	paths, err := resolveAppPaths("", dir)
+	paths, err := ResolvePaths("", dir)
 	if err != nil {
-		t.Fatalf("resolveAppPaths: %v", err)
+		t.Fatalf("ResolvePaths: %v", err)
 	}
 	if paths.WorkDir != dir {
 		t.Fatalf("WorkDir got %q want %q", paths.WorkDir, dir)
@@ -29,9 +29,9 @@ func TestResolveAppPathsPrefersDataDirFlag(t *testing.T) {
 func TestResolveAppPathsConfigFlagSetsWorkDirToParent(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "custom.json")
-	paths, err := resolveAppPaths(cfgPath, "")
+	paths, err := ResolvePaths(cfgPath, "")
 	if err != nil {
-		t.Fatalf("resolveAppPaths: %v", err)
+		t.Fatalf("ResolvePaths: %v", err)
 	}
 	if paths.WorkDir != dir {
 		t.Fatalf("WorkDir got %q want %q", paths.WorkDir, dir)
@@ -45,9 +45,9 @@ func TestResolveAppPathsUsesTCPMDataDirEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TCPM_DATA_DIR", dir)
 	t.Setenv("TCPM_CONFIG", "")
-	paths, err := resolveAppPaths("", "")
+	paths, err := ResolvePaths("", "")
 	if err != nil {
-		t.Fatalf("resolveAppPaths: %v", err)
+		t.Fatalf("ResolvePaths: %v", err)
 	}
 	if paths.WorkDir != dir {
 		t.Fatalf("WorkDir got %q want %q", paths.WorkDir, dir)
@@ -62,9 +62,9 @@ func TestResolveAppPathsUsesTCPMConfigEnv(t *testing.T) {
 	cfgPath := filepath.Join(dir, "env-config.json")
 	t.Setenv("TCPM_DATA_DIR", "")
 	t.Setenv("TCPM_CONFIG", cfgPath)
-	paths, err := resolveAppPaths("", "")
+	paths, err := ResolvePaths("", "")
 	if err != nil {
-		t.Fatalf("resolveAppPaths: %v", err)
+		t.Fatalf("ResolvePaths: %v", err)
 	}
 	if paths.WorkDir != dir {
 		t.Fatalf("WorkDir got %q want %q", paths.WorkDir, dir)
@@ -90,9 +90,9 @@ func TestResolveAppPathsPrefersCwdWhenConfigJSONExists(t *testing.T) {
 	t.Setenv("TCPM_DATA_DIR", "")
 	t.Setenv("TCPM_CONFIG", "")
 
-	paths, err := resolveAppPaths("", "")
+	paths, err := ResolvePaths("", "")
 	if err != nil {
-		t.Fatalf("resolveAppPaths: %v", err)
+		t.Fatalf("ResolvePaths: %v", err)
 	}
 	if paths.WorkDir != dir {
 		t.Fatalf("WorkDir got %q want %q", paths.WorkDir, dir)
@@ -103,16 +103,16 @@ func TestResolveAppPathsPrefersCwdWhenConfigJSONExists(t *testing.T) {
 }
 
 func TestShouldFallbackToUserConfig(t *testing.T) {
-	if shouldFallbackToUserConfig(nil) {
+	if ShouldFallbackToUserConfig(nil) {
 		t.Fatalf("nil error should not fallback")
 	}
-	if !shouldFallbackToUserConfig(os.ErrPermission) {
+	if !ShouldFallbackToUserConfig(os.ErrPermission) {
 		t.Fatalf("permission error should fallback")
 	}
-	if !shouldFallbackToUserConfig(syscall.EROFS) {
+	if !ShouldFallbackToUserConfig(syscall.EROFS) {
 		t.Fatalf("EROFS should fallback")
 	}
-	if shouldFallbackToUserConfig(errors.New("other")) {
+	if ShouldFallbackToUserConfig(errors.New("other")) {
 		t.Fatalf("unrelated error should not fallback")
 	}
 }
@@ -123,7 +123,7 @@ func TestLoadOrCreateConfigRejectsInvalidJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{not-json`), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if _, err := loadOrCreateConfig(path); err == nil {
+	if _, err := LoadOrCreate(path); err == nil {
 		t.Fatalf("expected invalid JSON error")
 	}
 }
@@ -149,9 +149,9 @@ func TestLoadOrCreateConfigMergesMissingNestedKeys(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	cfg, err := loadOrCreateConfig(path)
+	cfg, err := LoadOrCreate(path)
 	if err != nil {
-		t.Fatalf("loadOrCreateConfig: %v", err)
+		t.Fatalf("LoadOrCreate: %v", err)
 	}
 	if cfg.Username != "tester" {
 		t.Fatalf("username got %q", cfg.Username)
@@ -209,7 +209,7 @@ func TestMergeBetSettingsOverridesAndDefaults(t *testing.T) {
 	base := streamer.BetSettings{}
 	base.Default()
 
-	out := mergeBetSettings(base, betConfig{
+	out := mergeBetSettings(base, BetConfig{
 		Strategy:           "PERCENTAGE",
 		Percentage:         &pct,
 		PercentageGap:      &gap,
@@ -219,7 +219,7 @@ func TestMergeBetSettingsOverridesAndDefaults(t *testing.T) {
 		DeductStakeOnPlace: &deduct,
 		DelayMode:          "FROM_START",
 		Delay:              &delay,
-		FilterCondition: &filterConditionConfig{
+		FilterCondition: &FilterConditionConfig{
 			By:    "TOTAL_USERS",
 			Where: "GTE",
 			Value: &value,
@@ -282,7 +282,7 @@ func TestMergeStreamerSettingsAppliesFeatureFlags(t *testing.T) {
 	moments := false
 	streak := false
 	goals := true
-	out := mergeStreamerSettings(base, streamerSettingsConfig{
+	out := mergeStreamerSettings(base, StreamerSettingsConfig{
 		MakePredictions: &makePred,
 		FollowRaid:      &follow,
 		ClaimDrops:      &drops,
@@ -299,7 +299,7 @@ func TestMergeStreamerSettingsAppliesFeatureFlags(t *testing.T) {
 }
 
 func TestDefaultConfigWarmStartAndClaimDefaults(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := DefaultMap()
 	if got, ok := cfg["watch_streak_warm_start_cache"].(bool); !ok || !got {
 		t.Fatalf("watch_streak_warm_start_cache default got %#v want true", cfg["watch_streak_warm_start_cache"])
 	}

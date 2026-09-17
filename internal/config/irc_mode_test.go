@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"testing"
@@ -33,20 +33,20 @@ func TestMergeStreamerSettingsIRCMode(t *testing.T) {
 
 	// ? Valid override should replace base
 	overrideVal := "online"
-	out := mergeStreamerSettings(base, streamerSettingsConfig{IRCMode: &overrideVal})
+	out := mergeStreamerSettings(base, StreamerSettingsConfig{IRCMode: &overrideVal})
 	if out.IRCMode != streamer.IRCModeOnline {
 		t.Fatalf("expected override to set IRCMode to ONLINE, got %s", out.IRCMode)
 	}
 
 	// ? Invalid override should keep base
 	invalid := "maybe"
-	out = mergeStreamerSettings(base, streamerSettingsConfig{IRCMode: &invalid})
+	out = mergeStreamerSettings(base, StreamerSettingsConfig{IRCMode: &invalid})
 	if out.IRCMode != base.IRCMode {
 		t.Fatalf("invalid override should keep base IRCMode %s, got %s", base.IRCMode, out.IRCMode)
 	}
 
 	// ? Nil override should keep base
-	out = mergeStreamerSettings(base, streamerSettingsConfig{})
+	out = mergeStreamerSettings(base, StreamerSettingsConfig{})
 	if out.IRCMode != base.IRCMode {
 		t.Fatalf("nil override should keep base IRCMode %s, got %s", base.IRCMode, out.IRCMode)
 	}

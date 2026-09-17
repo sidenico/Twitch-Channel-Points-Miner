@@ -20,7 +20,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 ## Quick start
 1) Install Go 1.21+.
 2) Copy `config.json` (it will be created/extended on first run) and set `username` plus any options you want. Leave the `streamers` array empty to mine all followed channels.
-3) Run `go run .` (or `go build -o twitch-miner` and execute `./twitch-miner`).
+3) Run `go run ./cmd/miner` (or `go build -o twitch-miner ./cmd/miner` and execute `./twitch-miner`).
 4) On first launch you will see a device code prompt. Open `https://www.twitch.tv/activate`, enter the code, and wait until the app confirms login. Cookies are saved to `cookies/<username>.json` for future runs.
 5) Press Ctrl+C to stop; a session summary is printed on exit.
 

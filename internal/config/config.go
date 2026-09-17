@@ -1,25 +1,19 @@
-package main
+package config
 
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"TwitchChannelPointsMiner/internal/constants"
-	miner "TwitchChannelPointsMiner/internal/miner"
 	"TwitchChannelPointsMiner/internal/notify"
 	"TwitchChannelPointsMiner/internal/persistence"
 	"TwitchChannelPointsMiner/internal/streamer"
-	"TwitchChannelPointsMiner/internal/update"
 )
 
 func fileExists(path string) bool {
@@ -36,18 +30,18 @@ func isGoRunExecutable(path string) bool {
 	return strings.HasPrefix(lower, temp)
 }
 
-type appPaths struct {
+type Paths struct {
 	WorkDir    string
 	ConfigPath string
 }
 
-func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
+func ResolvePaths(configFlag, dataDirFlag string) (Paths, error) {
 	if dataDirFlag != "" {
 		abs, err := filepath.Abs(dataDirFlag)
 		if err != nil {
-			return appPaths{}, err
+			return Paths{}, err
 		}
-		return appPaths{
+		return Paths{
 			WorkDir:    abs,
 			ConfigPath: filepath.Join(abs, "config.json"),
 		}, nil
@@ -56,9 +50,9 @@ func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
 	if configFlag != "" {
 		abs, err := filepath.Abs(configFlag)
 		if err != nil {
-			return appPaths{}, err
+			return Paths{}, err
 		}
-		return appPaths{
+		return Paths{
 			WorkDir:    filepath.Dir(abs),
 			ConfigPath: abs,
 		}, nil
@@ -68,9 +62,9 @@ func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
 	if raw := strings.TrimSpace(os.Getenv("TCPM_DATA_DIR")); raw != "" {
 		abs, err := filepath.Abs(raw)
 		if err != nil {
-			return appPaths{}, err
+			return Paths{}, err
 		}
-		return appPaths{
+		return Paths{
 			WorkDir:    abs,
 			ConfigPath: filepath.Join(abs, "config.json"),
 		}, nil
@@ -79,9 +73,9 @@ func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
 	if raw := strings.TrimSpace(os.Getenv("TCPM_CONFIG")); raw != "" {
 		abs, err := filepath.Abs(raw)
 		if err != nil {
-			return appPaths{}, err
+			return Paths{}, err
 		}
-		return appPaths{
+		return Paths{
 			WorkDir:    filepath.Dir(abs),
 			ConfigPath: abs,
 		}, nil
@@ -94,7 +88,7 @@ func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
 
 	// ? Preserve the historical behavior when the user runs from a folder that already has config.json.
 	if cwd != "" && fileExists(filepath.Join(cwd, "config.json")) {
-		return appPaths{
+		return Paths{
 			WorkDir:    cwd,
 			ConfigPath: filepath.Join(cwd, "config.json"),
 		}, nil
@@ -103,7 +97,7 @@ func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
 	exePath, err := os.Executable()
 	if err == nil && exePath != "" && !isGoRunExecutable(exePath) {
 		exeDir := filepath.Dir(exePath)
-		return appPaths{
+		return Paths{
 			WorkDir:    exeDir,
 			ConfigPath: filepath.Join(exeDir, "config.json"),
 		}, nil
@@ -113,13 +107,13 @@ func resolveAppPaths(configFlag, dataDirFlag string) (appPaths, error) {
 	if cwd == "" {
 		cwd = "."
 	}
-	return appPaths{
+	return Paths{
 		WorkDir:    cwd,
 		ConfigPath: filepath.Join(cwd, "config.json"),
 	}, nil
 }
 
-func shouldFallbackToUserConfig(err error) bool {
+func ShouldFallbackToUserConfig(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -129,13 +123,13 @@ func shouldFallbackToUserConfig(err error) bool {
 	return errors.Is(err, syscall.EROFS)
 }
 
-type filterConditionConfig struct {
+type FilterConditionConfig struct {
 	By    string   `json:"by"`
 	Where string   `json:"where"`
 	Value *float64 `json:"value"`
 }
 
-type betConfig struct {
+type BetConfig struct {
 	Strategy           string                 `json:"strategy"`
 	Percentage         *int                   `json:"percentage"`
 	PercentageGap      *int                   `json:"percentage_gap"`
@@ -145,30 +139,30 @@ type betConfig struct {
 	DelayMode          string                 `json:"delay_mode"`
 	Delay              *float64               `json:"delay"`
 	MinimumPoints      *int                   `json:"minimum_points"`
-	FilterCondition    *filterConditionConfig `json:"filter_condition"`
+	FilterCondition    *FilterConditionConfig `json:"filter_condition"`
 }
 
-type streamerSettingsConfig struct {
+type StreamerSettingsConfig struct {
 	MakePredictions *bool     `json:"make_predictions"`
 	FollowRaid      *bool     `json:"follow_raid"`
 	ClaimDrops      *bool     `json:"claim_drops"`
 	ClaimMoments    *bool     `json:"claim_moments"`
 	WatchStreak     *bool     `json:"watch_streak"`
 	CommunityGoals  *bool     `json:"community_goals"`
-	Bet             betConfig `json:"bet"`
+	Bet             BetConfig `json:"bet"`
 	IRCMode         *string   `json:"chat_presence"`
 }
 
-type privacyConfig struct {
+type PrivacyConfig struct {
 	AnonymizeLogs bool `json:"anonymize_logs"`
 }
 
-type discordConfig struct {
+type DiscordConfig struct {
 	WebhookAPI string   `json:"webhook_api"`
 	Events     []string `json:"events"`
 }
 
-type config struct {
+type Config struct {
 	Username                   string        `json:"username"`
 	Password                   string        `json:"password"`
 	AutoUpdate                 bool          `json:"auto_update"`
@@ -198,15 +192,15 @@ type config struct {
 	GamePriority               []string      `json:"game_priority"`
 	GameExclude                []string      `json:"game_exclude"`
 	WatchPriority              []string      `json:"watch_priority"`
-	Bet                        betConfig     `json:"bet"`
+	Bet                        BetConfig     `json:"bet"`
 	Timezone                   *string       `json:"timezone"`
-	Privacy                    privacyConfig `json:"privacy"`
-	Discord                    discordConfig `json:"discord"`
+	Privacy                    PrivacyConfig `json:"privacy"`
+	Discord                    DiscordConfig `json:"discord"`
 
-	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
+	StreamerOverrides map[string]StreamerSettingsConfig `json:"streamer_overrides"`
 }
 
-func mergeBetSettings(base streamer.BetSettings, override betConfig) streamer.BetSettings {
+func mergeBetSettings(base streamer.BetSettings, override BetConfig) streamer.BetSettings {
 	out := base
 	if override.Strategy != "" {
 		out.Strategy = streamer.Strategy(override.Strategy)
@@ -242,7 +236,7 @@ func mergeBetSettings(base streamer.BetSettings, override betConfig) streamer.Be
 	return out
 }
 
-func mergeStreamerSettings(base streamer.StreamerSettings, override streamerSettingsConfig) streamer.StreamerSettings {
+func mergeStreamerSettings(base streamer.StreamerSettings, override StreamerSettingsConfig) streamer.StreamerSettings {
 	out := base
 	if override.MakePredictions != nil {
 		out.MakePredictions = *override.MakePredictions
@@ -285,7 +279,7 @@ func parseChatPresence(mode string, fallback streamer.IRCMode) streamer.IRCMode 
 	}
 }
 
-func mergeFilterCondition(base *streamer.FilterCondition, override *filterConditionConfig) *streamer.FilterCondition {
+func mergeFilterCondition(base *streamer.FilterCondition, override *FilterConditionConfig) *streamer.FilterCondition {
 	if override == nil {
 		return base
 	}
@@ -309,29 +303,7 @@ func mergeFilterCondition(base *streamer.FilterCondition, override *filterCondit
 	return &out
 }
 
-func clearConsole() {
-	var c *exec.Cmd
-	if runtime.GOOS == "windows" {
-		c = exec.Command("cmd", "/c", "cls")
-	} else {
-		c = exec.Command("clear")
-	}
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	_ = c.Run()
-}
-
-func setConsoleTitle(title string) {
-	if runtime.GOOS != "windows" {
-		return
-	}
-	cmd := exec.Command("cmd", "/c", fmt.Sprintf("title %s", title))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
-}
-
-func defaultConfig() map[string]interface{} {
+func DefaultMap() map[string]interface{} {
 	return map[string]interface{}{
 		"username":                      "your-twitch-username",
 		"password":                      "your-twitch-password (Optional)",
@@ -394,17 +366,17 @@ func defaultConfig() map[string]interface{} {
 	}
 }
 
-func loadOrCreateConfig(path string) (config, error) {
+func LoadOrCreate(path string) (Config, error) {
 	cfgMap := map[string]interface{}{}
 	fileData, err := os.ReadFile(path)
 	if err == nil {
 		if err := json.Unmarshal(fileData, &cfgMap); err != nil {
-			return config{}, fmt.Errorf("invalid config: %w", err)
+			return Config{}, fmt.Errorf("invalid config: %w", err)
 		}
 	}
 
 	changed := false
-	for key, value := range defaultConfig() {
+	for key, value := range DefaultMap() {
 		if _, ok := cfgMap[key]; !ok {
 			cfgMap[key] = value
 			changed = true
@@ -413,11 +385,11 @@ func loadOrCreateConfig(path string) (config, error) {
 
 	privacyRaw, ok := cfgMap["privacy"].(map[string]interface{})
 	if !ok {
-		privacyRaw = defaultConfig()["privacy"].(map[string]interface{})
+		privacyRaw = DefaultMap()["privacy"].(map[string]interface{})
 		cfgMap["privacy"] = privacyRaw
 		changed = true
 	} else {
-		defaultPrivacy := defaultConfig()["privacy"].(map[string]interface{})
+		defaultPrivacy := DefaultMap()["privacy"].(map[string]interface{})
 		for k, v := range defaultPrivacy {
 			if _, ok := privacyRaw[k]; !ok {
 				privacyRaw[k] = v
@@ -428,11 +400,11 @@ func loadOrCreateConfig(path string) (config, error) {
 
 	discordRaw, ok := cfgMap["discord"].(map[string]interface{})
 	if !ok {
-		discordRaw = defaultConfig()["discord"].(map[string]interface{})
+		discordRaw = DefaultMap()["discord"].(map[string]interface{})
 		cfgMap["discord"] = discordRaw
 		changed = true
 	} else {
-		defaultDiscord := defaultConfig()["discord"].(map[string]interface{})
+		defaultDiscord := DefaultMap()["discord"].(map[string]interface{})
 		for k, v := range defaultDiscord {
 			if _, ok := discordRaw[k]; !ok {
 				discordRaw[k] = v
@@ -443,11 +415,11 @@ func loadOrCreateConfig(path string) (config, error) {
 
 	betRaw, ok := cfgMap["bet"].(map[string]interface{})
 	if !ok {
-		betRaw = defaultConfig()["bet"].(map[string]interface{})
+		betRaw = DefaultMap()["bet"].(map[string]interface{})
 		cfgMap["bet"] = betRaw
 		changed = true
 	} else {
-		defaultBet := defaultConfig()["bet"].(map[string]interface{})
+		defaultBet := DefaultMap()["bet"].(map[string]interface{})
 		for k, v := range defaultBet {
 			if _, ok := betRaw[k]; !ok {
 				betRaw[k] = v
@@ -470,25 +442,25 @@ func loadOrCreateConfig(path string) (config, error) {
 
 	if err != nil || changed {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return config{}, err
+			return Config{}, err
 		}
 		if err := persistence.SaveJSON(path, cfgMap); err != nil {
-			return config{}, err
+			return Config{}, err
 		}
 	}
 
 	normalized, err := json.Marshal(cfgMap)
 	if err != nil {
-		return config{}, err
+		return Config{}, err
 	}
-	var cfg config
+	var cfg Config
 	if err := json.Unmarshal(normalized, &cfg); err != nil {
-		return config{}, err
+		return Config{}, err
 	}
 	return cfg, nil
 }
 
-func applyTimezoneOverride(raw *string, logger *notify.Logger) {
+func ApplyTimezoneOverride(raw *string, logger *notify.Logger) {
 	if raw == nil {
 		return
 	}
@@ -499,11 +471,12 @@ func applyTimezoneOverride(raw *string, logger *notify.Logger) {
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
 		logger.Errorf("%sTimezone override ignored; falling back to system time: %v%s", constants.ColorRed, err, constants.ColorReset)
+		return
 	}
 	time.Local = loc
 }
 
-func buildBaseStreamerSettings(cfg config) streamer.StreamerSettings {
+func BuildBaseStreamerSettings(cfg Config) streamer.StreamerSettings {
 	betSettings := streamer.BetSettings{
 		Strategy:           streamer.Strategy(cfg.Bet.Strategy),
 		Percentage:         cfg.Bet.Percentage,
@@ -532,7 +505,7 @@ func buildBaseStreamerSettings(cfg config) streamer.StreamerSettings {
 	return streamerSettings
 }
 
-func buildOverrideSettings(base streamer.StreamerSettings, overrides map[string]streamerSettingsConfig) map[string]streamer.StreamerSettings {
+func BuildOverrideSettings(base streamer.StreamerSettings, overrides map[string]StreamerSettingsConfig) map[string]streamer.StreamerSettings {
 	overrideSettings := make(map[string]streamer.StreamerSettings, len(overrides))
 	for name, override := range overrides {
 		key := strings.ToLower(strings.TrimSpace(name))
@@ -542,105 +515,4 @@ func buildOverrideSettings(base streamer.StreamerSettings, overrides map[string]
 		overrideSettings[key] = mergeStreamerSettings(base, override)
 	}
 	return overrideSettings
-}
-
-func main() {
-	configFlag := flag.String("config", "", "Path to config.json (default: ./config.json or next to the executable)")
-	dataDirFlag := flag.String("data-dir", "", "Directory for config/cookies/log (default: current directory if config.json exists; otherwise the executable directory)")
-	flag.Parse()
-
-	hasOverride := *configFlag != "" || *dataDirFlag != "" || strings.TrimSpace(os.Getenv("TCPM_CONFIG")) != "" || strings.TrimSpace(os.Getenv("TCPM_DATA_DIR")) != ""
-	paths, err := resolveAppPaths(*configFlag, *dataDirFlag)
-	if err != nil {
-		log.Fatalf("failed to resolve config paths: %v", err)
-	}
-	if paths.WorkDir != "" {
-		_ = os.MkdirAll(paths.WorkDir, 0o755)
-		if err := os.Chdir(paths.WorkDir); err != nil {
-			log.Printf("warning: failed to change working directory to %q: %v", paths.WorkDir, err)
-		}
-	}
-
-	setConsoleTitle("Klaro's Twitch Miner")
-	clearConsole()
-	cfg, err := loadOrCreateConfig(paths.ConfigPath)
-	if err != nil && !hasOverride && shouldFallbackToUserConfig(err) {
-		if base, derr := os.UserConfigDir(); derr == nil && base != "" {
-			fallbackDir := filepath.Join(base, "TwitchChannelPointsMiner")
-			_ = os.MkdirAll(fallbackDir, 0o755)
-			if chErr := os.Chdir(fallbackDir); chErr == nil {
-				fallbackCfg := filepath.Join(fallbackDir, "config.json")
-				if cfg2, err2 := loadOrCreateConfig(fallbackCfg); err2 == nil {
-					cfg = cfg2
-					err = nil
-					log.Printf("using config directory %q", fallbackDir)
-				}
-			}
-		}
-	}
-	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
-
-	if cfg.AutoUpdate {
-		updated, err := update.RunAutoUpdate()
-		if err != nil {
-			log.Printf("auto-update failed: %v", err)
-		}
-		if updated {
-			log.Printf("auto-update installed a newer version; restarting...")
-			return
-		}
-	}
-
-	// ? Apply optional defaults/overrides (per-streamer)
-	baseStreamerSettings := buildBaseStreamerSettings(cfg)
-	overrideSettings := buildOverrideSettings(baseStreamerSettings, cfg.StreamerOverrides)
-
-	loggerSettings := notify.LoggerSettings{
-		Save:             cfg.SaveLogs,
-		ConsoleLevel:     0,
-		FileLevel:        0,
-		Emoji:            cfg.Emojis,
-		Smart:            cfg.SmartLogging,
-		ShowSeconds:      cfg.ShowSeconds,
-		ConsoleUsername:  cfg.ShowUsernameInConsole,
-		ShowClaimedBonus: cfg.ShowClaimedBonusMsg,
-		Less:             false,
-		Debug:            cfg.Debug,
-		DebugDeep:        cfg.DebugDeep,
-		AnonymizeLogs:    cfg.Privacy.AnonymizeLogs,
-		Discord: notify.DiscordSettings{
-			WebhookAPI: cfg.Discord.WebhookAPI,
-			Events:     cfg.Discord.Events,
-		},
-	}
-
-	logger := notify.NewLogger(loggerSettings, cfg.Username)
-	applyTimezoneOverride(cfg.Timezone, logger)
-
-	minr := miner.NewMiner(
-		cfg.Username,
-		cfg.Password,
-		cfg.ClaimDropsStartup,
-		cfg.DisableSSLCertVerification,
-		loggerSettings,
-		baseStreamerSettings,
-		overrideSettings,
-		cfg.WatchPriority,
-		cfg.StreamersExclude,
-		cfg.GamePriority,
-		cfg.GameExclude,
-		cfg.DisableAtInNickname,
-		cfg.ShowGame,
-		cfg.WatchQueueLogging,
-		cfg.WatchStreakWarmStartCache,
-		cfg.ShowDropsProgress,
-	)
-
-	if len(cfg.Streamers) > 0 {
-		minr.Mine(cfg.Streamers)
-	} else {
-		minr.MineFollowers(streamer.FollowersOrderDESC)
-	}
 }
