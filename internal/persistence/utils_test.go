@@ -27,3 +27,18 @@ func TestSaveJSON(t *testing.T) {
 		t.Fatalf("decoded content mismatch: %#v", decoded)
 	}
 }
+
+func TestLoadJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "in.json")
+	if err := os.WriteFile(path, []byte(`{"hello":"world","n":2}`), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := LoadJSON(path, &decoded); err != nil {
+		t.Fatalf("load json error: %v", err)
+	}
+	if decoded["hello"] != "world" || decoded["n"] != float64(2) {
+		t.Fatalf("decoded content mismatch: %#v", decoded)
+	}
+}

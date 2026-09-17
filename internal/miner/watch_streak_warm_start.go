@@ -1,7 +1,6 @@
 package miner
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -56,13 +55,8 @@ func loadWatchStreakWarmStartCache(path, accountName string) *watchStreakWarmSta
 		return cache
 	}
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return cache
-	}
-
 	var payload watchStreakWarmStartFile
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err := persistence.LoadJSON(path, &payload); err != nil {
 		return cache
 	}
 	if payload.Version != 0 && payload.Version != watchStreakWarmStartCacheVersion {

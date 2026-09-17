@@ -12,3 +12,11 @@ func SaveJSON(path string, data interface{}) error {
 	}
 	return os.WriteFile(path, raw, 0o644)
 }
+
+func LoadJSON(path string, dest interface{}) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, dest)
+}

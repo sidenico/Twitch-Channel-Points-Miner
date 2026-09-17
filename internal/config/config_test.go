@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := DefaultMap()
 	required := []string{
 		"username",
 		"password",
@@ -38,7 +38,7 @@ func TestLoadOrCreateConfigCreatesFileAndDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cfg.json")
 
-	cfg, err := loadOrCreateConfig(path)
+	cfg, err := LoadOrCreate(path)
 	if err != nil {
 		t.Fatalf("load/create config error: %v", err)
 	}
@@ -56,27 +56,27 @@ func TestApplyTimezoneOverride(t *testing.T) {
 
 	zone := "UTC"
 	logger := notify.NewLogger(notify.LoggerSettings{}, "")
-	applyTimezoneOverride(&zone, logger)
+	ApplyTimezoneOverride(&zone, logger)
 	if time.Local.String() != "UTC" {
 		t.Fatalf("expected time.Local set to UTC, got %s", time.Local.String())
 	}
 
 	bad := "Bad/Zone"
-	applyTimezoneOverride(&bad, logger)
+	ApplyTimezoneOverride(&bad, logger)
 	if time.Local.String() != "UTC" {
 		t.Fatalf("invalid timezone should not change location, got %s", time.Local.String())
 	}
 }
 
 func TestBuildBaseStreamerSettingsAppliesGlobalFilterCondition(t *testing.T) {
-	cfg := config{
+	cfg := Config{
 		BettingMakePredictions: true,
 		FollowRaid:             true,
 		ClaimDrops:             true,
 		CommunityGoals:         false,
 		IRCMode:                "ONLINE",
-		Bet: betConfig{
-			FilterCondition: &filterConditionConfig{
+		Bet: BetConfig{
+			FilterCondition: &FilterConditionConfig{
 				By:    "TOTAL_USERS",
 				Where: "GTE",
 				Value: func() *float64 { v := 500000.0; return &v }(),
@@ -84,7 +84,7 @@ func TestBuildBaseStreamerSettingsAppliesGlobalFilterCondition(t *testing.T) {
 		},
 	}
 
-	base := buildBaseStreamerSettings(cfg)
+	base := BuildBaseStreamerSettings(cfg)
 	if base.Bet.FilterCondition == nil {
 		t.Fatalf("expected global filter_condition applied to base streamer settings")
 	}
@@ -100,7 +100,7 @@ func TestBuildBaseStreamerSettingsAppliesGlobalFilterCondition(t *testing.T) {
 }
 
 func TestBuildBaseStreamerSettingsUsesGlobalClaimMoments(t *testing.T) {
-	cfg := config{
+	cfg := Config{
 		BettingMakePredictions: true,
 		FollowRaid:             true,
 		ClaimDrops:             true,
@@ -109,7 +109,7 @@ func TestBuildBaseStreamerSettingsUsesGlobalClaimMoments(t *testing.T) {
 		IRCMode:                "ONLINE",
 	}
 
-	base := buildBaseStreamerSettings(cfg)
+	base := BuildBaseStreamerSettings(cfg)
 	if base.ClaimMoments {
 		t.Fatalf("expected base claim_moments false from global config")
 	}
@@ -124,10 +124,10 @@ func TestBuildOverrideSettingsMergesFilterCondition(t *testing.T) {
 	}
 	base.Default()
 
-	overrides := map[string]streamerSettingsConfig{
+	overrides := map[string]StreamerSettingsConfig{
 		"SomeStreamer": {
-			Bet: betConfig{
-				FilterCondition: &filterConditionConfig{
+			Bet: BetConfig{
+				FilterCondition: &FilterConditionConfig{
 					By:    "TOTAL_POINTS",
 					Where: "GT",
 					Value: func() *float64 { v := 999999.0; return &v }(),
@@ -136,7 +136,7 @@ func TestBuildOverrideSettingsMergesFilterCondition(t *testing.T) {
 		},
 	}
 
-	merged := buildOverrideSettings(base, overrides)
+	merged := BuildOverrideSettings(base, overrides)
 	override, ok := merged["somestreamer"]
 	if !ok {
 		t.Fatalf("expected override settings keyed by lowercased streamer name")
@@ -159,13 +159,13 @@ func TestBuildOverrideSettingsCanEnableClaimMomentsOverGlobalDefault(t *testing.
 	base.Default()
 
 	enable := true
-	overrides := map[string]streamerSettingsConfig{
+	overrides := map[string]StreamerSettingsConfig{
 		"SomeStreamer": {
 			ClaimMoments: &enable,
 		},
 	}
 
-	merged := buildOverrideSettings(base, overrides)
+	merged := BuildOverrideSettings(base, overrides)
 	got, ok := merged["somestreamer"]
 	if !ok {
 		t.Fatalf("expected override for somestreamer")

@@ -1,16 +1,14 @@
 package miner
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"TwitchChannelPointsMiner/internal/constants"
@@ -154,7 +152,6 @@ type Miner struct {
 	twitch                     *gql.Twitch
 	streamers                  []*streamer.Streamer
 	initialPoints              map[string]int
-	stop                       chan struct{}
 	watchPriorities            []watchPriority
 	streamerExclusions         map[string]struct{}
 	gamePriority               []string
@@ -220,13 +217,13 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 }
 
 // ? Mine runs the miner for an explicit list of streamers.
-func (m *Miner) Mine(streamers []string) {
-	m.run(streamers, false, streamer.FollowersOrderASC)
+func (m *Miner) Mine(ctx context.Context, streamers []string) error {
+	return m.run(ctx, streamers, false, streamer.FollowersOrderASC)
 }
 
 // ? MineFollowers runs the miner using the follower list.
-func (m *Miner) MineFollowers(order streamer.FollowersOrder) {
-	m.run(nil, true, order)
+func (m *Miner) MineFollowers(ctx context.Context, order streamer.FollowersOrder) error {
+	return m.run(ctx, nil, true, order)
 }
 
 func (m *Miner) filterExcludedTargets(targets []string) ([]string, int) {
@@ -454,23 +451,26 @@ func recordMinuteWatchSuccess(streamer *streamer.Streamer) {
 	streamer.WatchBackoffUntil = time.Time{}
 }
 
-func (m *Miner) run(streamers []string, useFollowers bool, order streamer.FollowersOrder) {
+func (m *Miner) run(ctx context.Context, streamers []string, useFollowers bool, order streamer.FollowersOrder) error {
 	m.startedAt = time.Now()
 	m.logger.Printf("Twitch Channel Points Miner | v%s", constants.Version)
 	m.logger.Println("https://github.com/0x8fv/Twitch-Channel-Points-Miner")
 	sessionID := newSessionID()
 	m.logger.EmojiEventf(":green_circle:", constants.EventStartup, "Start session: '%s'", sessionID)
-	m.stop = make(chan struct{})
 	m.initialPoints = make(map[string]int)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := ctx.Done()
 
 	tw, err := gql.NewTwitch(m.Username, gql.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer)
 	if err != nil {
-		m.logger.Fatalf("failed to create twitch client: %v", err)
+		return fmt.Errorf("failed to create twitch client: %w", err)
 	}
 	tw.SetGameChangeHandler(m.handleGameChange)
 	m.twitch = tw
 	if err := m.twitch.Login(m.Username); err != nil {
-		m.logger.Fatalf("login failed: %v", err)
+		return fmt.Errorf("login failed: %w", err)
 	}
 	m.loadWarmStartCache()
 	// TODO: Fix Available Campaigns
@@ -480,7 +480,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order streamer.Follow
 	if useFollowers {
 		follows, err := m.twitch.GetFollowers(100, order)
 		if err != nil {
-			m.logger.Fatalf("failed to load followers: %v", err)
+			return fmt.Errorf("failed to load followers: %w", err)
 		}
 		targets = follows
 	} else {
@@ -550,19 +550,27 @@ func (m *Miner) run(streamers []string, useFollowers bool, order streamer.Follow
 
 	m.streamers = streamerObjs
 
+	var wg sync.WaitGroup
+	start := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
 	// ? background loops
 	if claimDropsEnabled {
-		go m.dropClaimer(m.stop)
+		start(func() { m.dropClaimer(stop) })
 	}
-	go m.contextRefresher(streamerObjs, m.stop)
-	go m.minuteWatcher(streamerObjs, m.stop)
-	go m.startPubSub(streamerObjs, m.stop)
-	go m.streakRecovery(streamerObjs, m.stop)
+	start(func() { m.contextRefresher(streamerObjs, stop) })
+	start(func() { m.minuteWatcher(streamerObjs, stop) })
+	start(func() { m.startPubSub(ctx, streamerObjs) })
+	start(func() { m.streakRecovery(streamerObjs, stop) })
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
-	m.shutdown(sessionID)
+	<-ctx.Done()
+	m.shutdown(sessionID, &wg)
+	return nil
 }
 
 func (m *Miner) dropClaimer(stop <-chan struct{}) {
@@ -1505,7 +1513,7 @@ func (m *Miner) sleepWithStop(duration time.Duration, stop <-chan struct{}) bool
 	return false
 }
 
-func (m *Miner) startPubSub(streamers []*streamer.Streamer, stop <-chan struct{}) {
+func (m *Miner) startPubSub(ctx context.Context, streamers []*streamer.Streamer) {
 	client := pubsub.NewPubSubClient(
 		m.twitch,
 		m.logger,
@@ -1515,15 +1523,27 @@ func (m *Miner) startPubSub(streamers []*streamer.Streamer, stop <-chan struct{}
 		m.handlePubSubGain,
 		m.handlePubSubPresence,
 	)
-	client.Start(stop)
+	client.Run(ctx)
 }
 
-func (m *Miner) shutdown(sessionID string) {
-	select {
-	case <-m.stop:
-	default:
-		close(m.stop)
+func (m *Miner) shutdown(sessionID string, wg *sync.WaitGroup) {
+	m.stopAllChatWatchers()
+
+	if wg != nil {
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			if m.logger != nil {
+				m.logger.Printf("shutdown: timed out waiting for background workers")
+			}
+		}
 	}
+
 	fmt.Println()
 	fmt.Println()
 	fmt.Println()
@@ -1576,8 +1596,6 @@ func (m *Miner) shutdown(sessionID string) {
 			}
 		}
 	}
-	m.stopAllChatWatchers()
-	os.Exit(0)
 }
 
 func (m *Miner) updatePresence(streamer *streamer.Streamer) {

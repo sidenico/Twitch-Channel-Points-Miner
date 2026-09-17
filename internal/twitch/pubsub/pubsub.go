@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -43,16 +44,17 @@ func newEmptyStream() *streamer.Stream {
 var ErrPubSubReconnectRequested = errors.New("pubsub reconnect requested")
 
 type PubSubClient struct {
-	twitch      *gql.Twitch
-	logger      Logger
-	anonymizer  *privacy.Anonymizer
-	disableSSL  bool
-	streamers   []*streamer.Streamer
-	streamerMap map[string]*streamer.Streamer
-	predictions map[string]*prediction.PredictionEvent
-	predMu      sync.Mutex
-	onGain      func(streamer *streamer.Streamer, earned int, reason string, balance int)
-	onPresence  func(streamer *streamer.Streamer, online bool, reason string)
+	twitch           *gql.Twitch
+	logger           Logger
+	anonymizer       *privacy.Anonymizer
+	disableSSL       bool
+	streamers        []*streamer.Streamer
+	streamerMap      map[string]*streamer.Streamer
+	predictions      map[string]*prediction.PredictionEvent
+	predictionTimers map[string]*time.Timer
+	predMu           sync.Mutex
+	onGain           func(streamer *streamer.Streamer, earned int, reason string, balance int)
+	onPresence       func(streamer *streamer.Streamer, online bool, reason string)
 }
 
 func (p *PubSubClient) anonymizeLogs() bool {
@@ -112,19 +114,47 @@ func NewPubSubClient(
 		}
 	}
 	return &PubSubClient{
-		twitch:      twitch,
-		logger:      logger,
-		anonymizer:  anonymizer,
-		disableSSL:  disableSSL,
-		streamers:   streamers,
-		streamerMap: streamerMap,
-		predictions: make(map[string]*prediction.PredictionEvent),
-		onGain:      onGain,
-		onPresence:  onPresence,
+		twitch:           twitch,
+		logger:           logger,
+		anonymizer:       anonymizer,
+		disableSSL:       disableSSL,
+		streamers:        streamers,
+		streamerMap:      streamerMap,
+		predictions:      make(map[string]*prediction.PredictionEvent),
+		predictionTimers: make(map[string]*time.Timer),
+		onGain:           onGain,
+		onPresence:       onPresence,
 	}
 }
 
-func (p *PubSubClient) Start(stop <-chan struct{}) {
+// Sleep waits for d or until ctx is cancelled. Returns true if cancelled.
+func Sleep(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return false
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func (p *PubSubClient) stopPredictionTimers() {
+	p.predMu.Lock()
+	defer p.predMu.Unlock()
+	for id, timer := range p.predictionTimers {
+		if timer != nil {
+			timer.Stop()
+		}
+		delete(p.predictionTimers, id)
+	}
+}
+
+// Run starts PubSub workers and blocks until ctx is cancelled, then waits for children.
+func (p *PubSubClient) Run(ctx context.Context) {
 	if p.disableSSL {
 		p.logger.Printf("SSL certificate verification is disabled! Be aware!")
 	}
@@ -133,15 +163,32 @@ func (p *PubSubClient) Start(stop <-chan struct{}) {
 		p.logger.Errorf("PubSub topic error: %v", err)
 		return
 	}
-	go p.pollPendingClaims(stop)
+
+	stop := ctx.Done()
+	var wg sync.WaitGroup
+	start := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
+	start(func() { p.pollPendingClaims(stop) })
 	batches := chunkTopics(topics, 50)
 	for i, batch := range batches {
 		idx := i + 1
-		go p.run(idx, batch, stop)
+		batchCopy := batch
+		start(func() { p.run(ctx, idx, batchCopy) })
 	}
+
+	<-ctx.Done()
+	p.stopPredictionTimers()
+	wg.Wait()
 }
 
-func (p *PubSubClient) run(connIndex int, topics []string, stop <-chan struct{}) {
+func (p *PubSubClient) run(ctx context.Context, connIndex int, topics []string) {
+	stop := ctx.Done()
 	for {
 		select {
 		case <-stop:
@@ -152,11 +199,15 @@ func (p *PubSubClient) run(connIndex int, topics []string, stop <-chan struct{})
 		if err := p.connectAndListen(connIndex, topics, stop); err != nil {
 			if errors.Is(err, ErrPubSubReconnectRequested) {
 				p.logger.Printf("PubSub[%d] reconnect requested; waiting ~60 seconds", connIndex)
-				time.Sleep(60 * time.Second)
+				if Sleep(ctx, 60*time.Second) {
+					return
+				}
 				continue
 			}
 			p.logger.Errorf("PubSub[%d] connection error: %v", connIndex, err)
-			time.Sleep(10 * time.Second)
+			if Sleep(ctx, 10*time.Second) {
+				return
+			}
 		}
 	}
 }
@@ -655,12 +706,19 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 			return nil
 		}
 		wait := event.ClosingAfter(time.Now())
-		p.predMu.Lock()
-		p.predictions[event.EventID] = event
-		p.predMu.Unlock()
-		time.AfterFunc(wait, func() {
+		timer := time.AfterFunc(wait, func() {
 			p.placePrediction(event.EventID)
 		})
+		p.predMu.Lock()
+		p.predictions[event.EventID] = event
+		if p.predictionTimers == nil {
+			p.predictionTimers = make(map[string]*time.Timer)
+		}
+		if existing := p.predictionTimers[event.EventID]; existing != nil {
+			existing.Stop()
+		}
+		p.predictionTimers[event.EventID] = timer
+		p.predMu.Unlock()
 		p.logger.EmojiEventf(":alarm_clock:", constants.EventBetStart, "Place bet after %s for %s", wait.Truncate(time.Second), p.streamerName(streamer))
 	case "event-updated":
 		var existing *prediction.PredictionEvent
@@ -678,6 +736,14 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 		}
 	}
 	return nil
+}
+
+func (p *PubSubClient) clearPredictionLocked(eventID string) {
+	if timer := p.predictionTimers[eventID]; timer != nil {
+		timer.Stop()
+		delete(p.predictionTimers, eventID)
+	}
+	delete(p.predictions, eventID)
 }
 
 func (p *PubSubClient) processPredictionUser(payload map[string]interface{}) error {
@@ -711,7 +777,7 @@ func (p *PubSubClient) processPredictionUser(payload map[string]interface{}) err
 		}
 		p.logPredictionResult(event, result)
 		p.predMu.Lock()
-		delete(p.predictions, eventID)
+		p.clearPredictionLocked(eventID)
 		p.predMu.Unlock()
 	}
 	return nil
@@ -729,7 +795,7 @@ func (p *PubSubClient) placePrediction(eventID string) {
 			event.ResultType = markResult
 		}
 		p.predMu.Lock()
-		delete(p.predictions, eventID)
+		p.clearPredictionLocked(eventID)
 		p.predMu.Unlock()
 	}
 	streamer := event.Streamer
@@ -1036,7 +1102,7 @@ func (p *PubSubClient) resolvePredictionFromChannel(event *prediction.Prediction
 	})
 
 	p.predMu.Lock()
-	delete(p.predictions, event.EventID)
+	p.clearPredictionLocked(event.EventID)
 	p.predMu.Unlock()
 }
 
