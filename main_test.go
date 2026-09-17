@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	miner "TwitchChannelPointsMiner/TwitchChannelPointsMiner"
-	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
+	"TwitchChannelPointsMiner/internal/notify"
+	"TwitchChannelPointsMiner/internal/streamer"
 )
 
 func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
@@ -55,7 +55,7 @@ func TestApplyTimezoneOverride(t *testing.T) {
 	defer func() { time.Local = original }()
 
 	zone := "UTC"
-	logger := miner.NewLogger(miner.LoggerSettings{}, "")
+	logger := notify.NewLogger(notify.LoggerSettings{}, "")
 	applyTimezoneOverride(&zone, logger)
 	if time.Local.String() != "UTC" {
 		t.Fatalf("expected time.Local set to UTC, got %s", time.Local.String())
@@ -116,10 +116,10 @@ func TestBuildBaseStreamerSettingsUsesGlobalClaimMoments(t *testing.T) {
 }
 
 func TestBuildOverrideSettingsMergesFilterCondition(t *testing.T) {
-	base := entities.StreamerSettings{
+	base := streamer.StreamerSettings{
 		MakePredictions: true,
-		Bet: entities.BetSettings{
-			Strategy: entities.StrategySmart,
+		Bet: streamer.BetSettings{
+			Strategy: streamer.StrategySmart,
 		},
 	}
 	base.Default()
@@ -153,7 +153,7 @@ func TestBuildOverrideSettingsMergesFilterCondition(t *testing.T) {
 }
 
 func TestBuildOverrideSettingsCanEnableClaimMomentsOverGlobalDefault(t *testing.T) {
-	base := entities.StreamerSettings{
+	base := streamer.StreamerSettings{
 		ClaimMoments: false,
 	}
 	base.Default()

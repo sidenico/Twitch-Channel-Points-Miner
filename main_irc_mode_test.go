@@ -3,21 +3,21 @@ package main
 import (
 	"testing"
 
-	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
+	"TwitchChannelPointsMiner/internal/streamer"
 )
 
 func TestParseIRCMode(t *testing.T) {
-	fallback := entities.IRCModeOnline
+	fallback := streamer.IRCModeOnline
 	tests := []struct {
 		name string
 		in   string
-		want entities.IRCMode
+		want streamer.IRCMode
 	}{
-		{name: "always exact", in: "ALWAYS", want: entities.IRCModeAlways},
-		{name: "always lower", in: "always", want: entities.IRCModeAlways},
-		{name: "never padded", in: "  never ", want: entities.IRCModeNever},
-		{name: "offline", in: "offline", want: entities.IRCModeOffline},
-		{name: "online", in: "online", want: entities.IRCModeOnline},
+		{name: "always exact", in: "ALWAYS", want: streamer.IRCModeAlways},
+		{name: "always lower", in: "always", want: streamer.IRCModeAlways},
+		{name: "never padded", in: "  never ", want: streamer.IRCModeNever},
+		{name: "offline", in: "offline", want: streamer.IRCModeOffline},
+		{name: "online", in: "online", want: streamer.IRCModeOnline},
 		{name: "empty", in: "", want: fallback},
 		{name: "invalid", in: "nope", want: fallback},
 	}
@@ -29,12 +29,12 @@ func TestParseIRCMode(t *testing.T) {
 }
 
 func TestMergeStreamerSettingsIRCMode(t *testing.T) {
-	base := entities.StreamerSettings{IRCMode: entities.IRCModeNever}
+	base := streamer.StreamerSettings{IRCMode: streamer.IRCModeNever}
 
 	// ? Valid override should replace base
 	overrideVal := "online"
 	out := mergeStreamerSettings(base, streamerSettingsConfig{IRCMode: &overrideVal})
-	if out.IRCMode != entities.IRCModeOnline {
+	if out.IRCMode != streamer.IRCModeOnline {
 		t.Fatalf("expected override to set IRCMode to ONLINE, got %s", out.IRCMode)
 	}
 

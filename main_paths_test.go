@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
+	"TwitchChannelPointsMiner/internal/streamer"
 )
 
 func TestResolveAppPathsPrefersDataDirFlag(t *testing.T) {
@@ -206,7 +206,7 @@ func TestMergeBetSettingsOverridesAndDefaults(t *testing.T) {
 	deduct := false
 	delay := 3.5
 	value := 25.0
-	base := entities.BetSettings{}
+	base := streamer.BetSettings{}
 	base.Default()
 
 	out := mergeBetSettings(base, betConfig{
@@ -226,7 +226,7 @@ func TestMergeBetSettingsOverridesAndDefaults(t *testing.T) {
 		},
 	})
 
-	if out.Strategy != entities.StrategyPercentage {
+	if out.Strategy != streamer.StrategyPercentage {
 		t.Fatalf("strategy got %s", out.Strategy)
 	}
 	if out.Percentage == nil || *out.Percentage != 12 {
@@ -247,16 +247,16 @@ func TestMergeBetSettingsOverridesAndDefaults(t *testing.T) {
 	if out.DeductStakeOnPlace == nil || *out.DeductStakeOnPlace {
 		t.Fatalf("deduct_stake_on_place got %#v", out.DeductStakeOnPlace)
 	}
-	if out.DelayMode != entities.DelayModeFromStart {
+	if out.DelayMode != streamer.DelayModeFromStart {
 		t.Fatalf("delay_mode got %s", out.DelayMode)
 	}
 	if out.Delay == nil || *out.Delay != 3.5 {
 		t.Fatalf("delay got %#v", out.Delay)
 	}
-	if out.FilterCondition == nil || out.FilterCondition.By != entities.OutcomeTotalUsers {
+	if out.FilterCondition == nil || out.FilterCondition.By != streamer.OutcomeTotalUsers {
 		t.Fatalf("filter by got %#v", out.FilterCondition)
 	}
-	if out.FilterCondition.Where != entities.ConditionGTE {
+	if out.FilterCondition.Where != streamer.ConditionGTE {
 		t.Fatalf("filter where got %s", out.FilterCondition.Where)
 	}
 	if out.FilterCondition.Value == nil || *out.FilterCondition.Value != 25 {
@@ -265,14 +265,14 @@ func TestMergeBetSettingsOverridesAndDefaults(t *testing.T) {
 }
 
 func TestMergeStreamerSettingsAppliesFeatureFlags(t *testing.T) {
-	base := entities.StreamerSettings{
+	base := streamer.StreamerSettings{
 		MakePredictions: true,
 		FollowRaid:      true,
 		ClaimDrops:      true,
 		ClaimMoments:    true,
 		WatchStreak:     true,
 		CommunityGoals:  false,
-		IRCMode:         entities.IRCModeOnline,
+		IRCMode:         streamer.IRCModeOnline,
 	}
 	base.Default()
 
