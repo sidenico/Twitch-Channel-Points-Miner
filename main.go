@@ -14,10 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	miner "TwitchChannelPointsMiner/TwitchChannelPointsMiner"
-	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
-	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
-	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
+	"TwitchChannelPointsMiner/internal/constants"
+	"TwitchChannelPointsMiner/internal/miner"
+	"TwitchChannelPointsMiner/internal/notify"
+	"TwitchChannelPointsMiner/internal/persistence"
+	"TwitchChannelPointsMiner/internal/streamer"
+	"TwitchChannelPointsMiner/internal/update"
 )
 
 func fileExists(path string) bool {
@@ -204,10 +206,10 @@ type config struct {
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
 
-func mergeBetSettings(base entities.BetSettings, override betConfig) entities.BetSettings {
+func mergeBetSettings(base streamer.BetSettings, override betConfig) streamer.BetSettings {
 	out := base
 	if override.Strategy != "" {
-		out.Strategy = entities.Strategy(override.Strategy)
+		out.Strategy = streamer.Strategy(override.Strategy)
 	}
 	if override.Percentage != nil {
 		out.Percentage = override.Percentage
@@ -231,7 +233,7 @@ func mergeBetSettings(base entities.BetSettings, override betConfig) entities.Be
 		out.FilterCondition = mergeFilterCondition(out.FilterCondition, override.FilterCondition)
 	}
 	if override.DelayMode != "" {
-		out.DelayMode = entities.DelayMode(override.DelayMode)
+		out.DelayMode = streamer.DelayMode(override.DelayMode)
 	}
 	if override.Delay != nil {
 		out.Delay = override.Delay
@@ -240,7 +242,7 @@ func mergeBetSettings(base entities.BetSettings, override betConfig) entities.Be
 	return out
 }
 
-func mergeStreamerSettings(base entities.StreamerSettings, override streamerSettingsConfig) entities.StreamerSettings {
+func mergeStreamerSettings(base streamer.StreamerSettings, override streamerSettingsConfig) streamer.StreamerSettings {
 	out := base
 	if override.MakePredictions != nil {
 		out.MakePredictions = *override.MakePredictions
@@ -268,34 +270,34 @@ func mergeStreamerSettings(base entities.StreamerSettings, override streamerSett
 	return out
 }
 
-func parseChatPresence(mode string, fallback entities.IRCMode) entities.IRCMode {
+func parseChatPresence(mode string, fallback streamer.IRCMode) streamer.IRCMode {
 	switch strings.ToUpper(strings.TrimSpace(mode)) {
-	case string(entities.IRCModeAlways):
-		return entities.IRCModeAlways
-	case string(entities.IRCModeNever):
-		return entities.IRCModeNever
-	case string(entities.IRCModeOffline):
-		return entities.IRCModeOffline
-	case string(entities.IRCModeOnline):
-		return entities.IRCModeOnline
+	case string(streamer.IRCModeAlways):
+		return streamer.IRCModeAlways
+	case string(streamer.IRCModeNever):
+		return streamer.IRCModeNever
+	case string(streamer.IRCModeOffline):
+		return streamer.IRCModeOffline
+	case string(streamer.IRCModeOnline):
+		return streamer.IRCModeOnline
 	default:
 		return fallback
 	}
 }
 
-func mergeFilterCondition(base *entities.FilterCondition, override *filterConditionConfig) *entities.FilterCondition {
+func mergeFilterCondition(base *streamer.FilterCondition, override *filterConditionConfig) *streamer.FilterCondition {
 	if override == nil {
 		return base
 	}
-	var out entities.FilterCondition
+	var out streamer.FilterCondition
 	if base != nil {
 		out = *base
 	}
 	if override.By != "" {
-		out.By = entities.OutcomeKey(strings.ToUpper(strings.TrimSpace(override.By)))
+		out.By = streamer.OutcomeKey(strings.ToUpper(strings.TrimSpace(override.By)))
 	}
 	if override.Where != "" {
-		out.Where = entities.Condition(strings.ToUpper(strings.TrimSpace(override.Where)))
+		out.Where = streamer.Condition(strings.ToUpper(strings.TrimSpace(override.Where)))
 	}
 	if override.Value != nil {
 		out.Value = override.Value
@@ -470,7 +472,7 @@ func loadOrCreateConfig(path string) (config, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return config{}, err
 		}
-		if err := utils.SaveJSON(path, cfgMap); err != nil {
+		if err := persistence.SaveJSON(path, cfgMap); err != nil {
 			return config{}, err
 		}
 	}
@@ -486,7 +488,7 @@ func loadOrCreateConfig(path string) (config, error) {
 	return cfg, nil
 }
 
-func applyTimezoneOverride(raw *string, logger *miner.Logger) {
+func applyTimezoneOverride(raw *string, logger *notify.Logger) {
 	if raw == nil {
 		return
 	}
@@ -501,22 +503,22 @@ func applyTimezoneOverride(raw *string, logger *miner.Logger) {
 	time.Local = loc
 }
 
-func buildBaseStreamerSettings(cfg config) entities.StreamerSettings {
-	betSettings := entities.BetSettings{
-		Strategy:           entities.Strategy(cfg.Bet.Strategy),
+func buildBaseStreamerSettings(cfg config) streamer.StreamerSettings {
+	betSettings := streamer.BetSettings{
+		Strategy:           streamer.Strategy(cfg.Bet.Strategy),
 		Percentage:         cfg.Bet.Percentage,
 		PercentageGap:      cfg.Bet.PercentageGap,
 		MaxPoints:          cfg.Bet.MaxPoints,
 		StealthMode:        cfg.Bet.StealthMode,
 		DeductStakeOnPlace: cfg.Bet.DeductStakeOnPlace,
-		DelayMode:          entities.DelayMode(cfg.Bet.DelayMode),
+		DelayMode:          streamer.DelayMode(cfg.Bet.DelayMode),
 		Delay:              cfg.Bet.Delay,
 		MinimumPoints:      cfg.Bet.MinimumPoints,
 		FilterCondition:    mergeFilterCondition(nil, cfg.Bet.FilterCondition),
 	}
 	betSettings.Default()
 
-	streamerSettings := entities.StreamerSettings{
+	streamerSettings := streamer.StreamerSettings{
 		MakePredictions: cfg.BettingMakePredictions,
 		FollowRaid:      cfg.FollowRaid,
 		ClaimDrops:      cfg.ClaimDrops,
@@ -524,14 +526,14 @@ func buildBaseStreamerSettings(cfg config) entities.StreamerSettings {
 		WatchStreak:     true,
 		CommunityGoals:  cfg.CommunityGoals,
 		Bet:             betSettings,
-		IRCMode:         parseChatPresence(cfg.IRCMode, entities.IRCModeOnline),
+		IRCMode:         parseChatPresence(cfg.IRCMode, streamer.IRCModeOnline),
 	}
 	streamerSettings.Default()
 	return streamerSettings
 }
 
-func buildOverrideSettings(base entities.StreamerSettings, overrides map[string]streamerSettingsConfig) map[string]entities.StreamerSettings {
-	overrideSettings := make(map[string]entities.StreamerSettings, len(overrides))
+func buildOverrideSettings(base streamer.StreamerSettings, overrides map[string]streamerSettingsConfig) map[string]streamer.StreamerSettings {
+	overrideSettings := make(map[string]streamer.StreamerSettings, len(overrides))
 	for name, override := range overrides {
 		key := strings.ToLower(strings.TrimSpace(name))
 		if key == "" {
@@ -581,7 +583,7 @@ func main() {
 	}
 
 	if cfg.AutoUpdate {
-		updated, err := miner.RunAutoUpdate()
+		updated, err := update.RunAutoUpdate()
 		if err != nil {
 			log.Printf("auto-update failed: %v", err)
 		}
@@ -595,7 +597,7 @@ func main() {
 	baseStreamerSettings := buildBaseStreamerSettings(cfg)
 	overrideSettings := buildOverrideSettings(baseStreamerSettings, cfg.StreamerOverrides)
 
-	loggerSettings := miner.LoggerSettings{
+	loggerSettings := notify.LoggerSettings{
 		Save:             cfg.SaveLogs,
 		ConsoleLevel:     0,
 		FileLevel:        0,
@@ -608,13 +610,13 @@ func main() {
 		Debug:            cfg.Debug,
 		DebugDeep:        cfg.DebugDeep,
 		AnonymizeLogs:    cfg.Privacy.AnonymizeLogs,
-		Discord: miner.DiscordSettings{
+		Discord: notify.DiscordSettings{
 			WebhookAPI: cfg.Discord.WebhookAPI,
 			Events:     cfg.Discord.Events,
 		},
 	}
 
-	logger := miner.NewLogger(loggerSettings, cfg.Username)
+	logger := notify.NewLogger(loggerSettings, cfg.Username)
 	applyTimezoneOverride(cfg.Timezone, logger)
 
 	minr := miner.NewMiner(
@@ -639,6 +641,6 @@ func main() {
 	if len(cfg.Streamers) > 0 {
 		minr.Mine(cfg.Streamers)
 	} else {
-		minr.MineFollowers(entities.FollowersOrderDESC)
+		minr.MineFollowers(streamer.FollowersOrderDESC)
 	}
 }
