@@ -1,0 +1,28 @@
+# Git
+.git
+.github
+.gitignore
+
+# Local / build artifacts
+data/
+dist/
+*.exe
+twitch-miner
+
+# Secrets and runtime state (never bake into the image)
+config.json
+cookies/
+log/
+
+# Docs / non-runtime
+assets/
+*.md
+!README.md
+LICENSE
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+build.ps1
+
+# Tests are not needed in the runtime image
+**/*_test.go
