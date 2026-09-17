@@ -97,12 +97,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 		cfg.ShowDropsProgress,
 	)
 
-	// Stage B: miner still owns signals; ctx reserved for Stage C wiring.
-	_ = ctx
 	if len(cfg.Streamers) > 0 {
-		minr.Mine(cfg.Streamers)
-	} else {
-		minr.MineFollowers(streamer.FollowersOrderDESC)
+		return minr.Mine(ctx, cfg.Streamers)
 	}
-	return nil
+	return minr.MineFollowers(ctx, streamer.FollowersOrderDESC)
 }
