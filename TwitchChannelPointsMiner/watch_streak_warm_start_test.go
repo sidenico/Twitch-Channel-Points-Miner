@@ -316,3 +316,87 @@ func TestPickStreamersToWatchPersistsTimedOutStreakToWarmStartCache(t *testing.T
 		t.Fatalf("cache should persist timed-out streak as resolved")
 	}
 }
+
+func TestWatchStreakWarmStartCacheIgnoresWrongVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.json")
+	payload := []byte(`{
+		"version": 999,
+		"entries": [{
+			"account_name": "account",
+			"streamer_login": "streamer",
+			"channel_id": "1",
+			"broadcast_id": "b1",
+			"watch_streak_missing": false,
+			"is_online": true,
+			"checked_at": "2026-04-10T12:00:00Z"
+		}]
+	}`)
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cache := loadWatchStreakWarmStartCache(path, "account")
+	if _, ok := cache.get("streamer"); ok {
+		t.Fatalf("wrong version payload should be ignored")
+	}
+}
+
+func TestWatchStreakWarmStartCacheFiltersOtherAccounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.json")
+	payload := []byte(`{
+		"version": 1,
+		"entries": [
+			{
+				"account_name": "other",
+				"streamer_login": "streamer",
+				"channel_id": "1",
+				"broadcast_id": "b1",
+				"watch_streak_missing": false,
+				"is_online": true,
+				"checked_at": "2026-04-10T12:00:00Z"
+			},
+			{
+				"account_name": "account",
+				"streamer_login": "mine",
+				"channel_id": "2",
+				"broadcast_id": "b2",
+				"watch_streak_missing": false,
+				"is_online": true,
+				"checked_at": "2026-04-10T12:00:00Z"
+			}
+		]
+	}`)
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cache := loadWatchStreakWarmStartCache(path, "account")
+	if _, ok := cache.get("streamer"); ok {
+		t.Fatalf("other account entry should be filtered out")
+	}
+	if _, ok := cache.get("mine"); !ok {
+		t.Fatalf("matching account entry should load")
+	}
+}
+
+func TestNewMinerWarmStartCachePathUsesSanitizedUsername(t *testing.T) {
+	m := NewMiner(
+		"User/Name",
+		"",
+		false,
+		false,
+		LoggerSettings{},
+		entities.StreamerSettings{IRCMode: entities.IRCModeNever},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		false,
+		false,
+		false,
+		true,
+		false,
+	)
+	if m.warmStartCachePath != filepath.Join("log", "watch_streak_cache.user_name.json") {
+		t.Fatalf("warm start path got %q", m.warmStartCachePath)
+	}
+}
