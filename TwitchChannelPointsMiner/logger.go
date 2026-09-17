@@ -14,18 +14,18 @@ import (
 )
 
 type LoggerSettings struct {
-	Save             bool `json:"save"`
-	ConsoleLevel     int  `json:"console_level"`
-	FileLevel        int  `json:"file_level"`
-	Emoji            bool `json:"emoji"`
-	Smart            bool `json:"smart"`
-	ShowSeconds      bool `json:"show_seconds"`
-	ConsoleUsername  bool `json:"console_username"`
-	ShowClaimedBonus bool `json:"show_claimed_bonus_msg"`
-	Less             bool `json:"less"`
-	Debug            bool `json:"debug"`
-	DebugDeep        bool `json:"debug_deep"`
-	AnonymizeLogs    bool `json:"anonymize_logs"`
+	Save             bool            `json:"save"`
+	ConsoleLevel     int             `json:"console_level"`
+	FileLevel        int             `json:"file_level"`
+	Emoji            bool            `json:"emoji"`
+	Smart            bool            `json:"smart"`
+	ShowSeconds      bool            `json:"show_seconds"`
+	ConsoleUsername  bool            `json:"console_username"`
+	ShowClaimedBonus bool            `json:"show_claimed_bonus_msg"`
+	Less             bool            `json:"less"`
+	Debug            bool            `json:"debug"`
+	DebugDeep        bool            `json:"debug_deep"`
+	AnonymizeLogs    bool            `json:"anonymize_logs"`
 	Discord          DiscordSettings `json:"discord"`
 }
 
