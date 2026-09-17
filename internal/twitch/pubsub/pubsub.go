@@ -123,8 +123,8 @@ func NewPubSubClient(
 	}
 }
 
-// Sleep waits for d or until ctx is cancelled. Returns true if cancelled.
-func Sleep(ctx context.Context, d time.Duration) bool {
+// sleep waits for d or until ctx is cancelled. Returns true if cancelled.
+func sleep(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		return false
 	}
@@ -195,13 +195,13 @@ func (p *PubSubClient) run(ctx context.Context, connIndex int, topics []string) 
 		if err := p.connectAndListen(connIndex, topics, stop); err != nil {
 			if errors.Is(err, ErrPubSubReconnectRequested) {
 				p.logger.Printf("PubSub[%d] reconnect requested; waiting ~60 seconds", connIndex)
-				if Sleep(ctx, 60*time.Second) {
+				if sleep(ctx, 60*time.Second) {
 					return
 				}
 				continue
 			}
 			p.logger.Errorf("PubSub[%d] connection error: %v", connIndex, err)
-			if Sleep(ctx, 10*time.Second) {
+			if sleep(ctx, 10*time.Second) {
 				return
 			}
 		}
@@ -702,9 +702,8 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 			return nil
 		}
 		wait := event.ClosingAfter(time.Now())
-		timer := time.AfterFunc(wait, func() {
-			p.placePrediction(event.EventID)
-		})
+		// Register the event before AfterFunc so a zero/near-zero wait cannot
+		// race placePrediction before the map entry exists.
 		p.predMu.Lock()
 		p.predictions[event.EventID] = event
 		if p.predictionTimers == nil {
@@ -713,6 +712,9 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 		if existing := p.predictionTimers[event.EventID]; existing != nil {
 			existing.Stop()
 		}
+		timer := time.AfterFunc(wait, func() {
+			p.placePrediction(event.EventID)
+		})
 		p.predictionTimers[event.EventID] = timer
 		p.predMu.Unlock()
 		p.logger.EmojiEventf(":alarm_clock:", constants.EventBetStart, "Place bet after %s for %s", wait.Truncate(time.Second), p.streamerName(streamer))

@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"testing"
+	"time"
 
 	"TwitchChannelPointsMiner/internal/constants"
 	"TwitchChannelPointsMiner/internal/prediction"
@@ -115,5 +116,56 @@ func TestPlacePredictionStopsTrackingOnFilterSkip(t *testing.T) {
 	}
 	if event.ResultType != "SKIPPED" {
 		t.Fatalf("expected ResultType SKIPPED, got %q", event.ResultType)
+	}
+}
+
+func TestEventCreatedRegistersPredictionSynchronously(t *testing.T) {
+	logger := &stubPubSubLogger{}
+	delay := 6.0
+	s := &streamer.Streamer{
+		Username:      "tester",
+		ChannelID:     "ch-1",
+		ChannelPoints: 1_000,
+		Settings: streamer.StreamerSettings{
+			MakePredictions: true,
+			Bet: streamer.BetSettings{
+				Strategy:  streamer.StrategyMostVoted,
+				DelayMode: streamer.DelayModeFromEnd,
+				Delay:     &delay,
+			},
+		},
+	}
+	client := &PubSubClient{
+		logger:           logger,
+		streamerMap:      map[string]*streamer.Streamer{"ch-1": s},
+		predictions:      make(map[string]*prediction.PredictionEvent),
+		predictionTimers: make(map[string]*time.Timer),
+	}
+	t.Cleanup(client.stopPredictionTimers)
+
+	err := client.processPredictionChannel("predictions-channel-v1.ch-1", map[string]interface{}{
+		"type": "event-created",
+		"data": map[string]interface{}{
+			"event": map[string]interface{}{
+				"id":                        "ev-sync",
+				"status":                    "ACTIVE",
+				"title":                     "sync-register",
+				"prediction_window_seconds": 60.0,
+				"created_at":                time.Now().UTC().Format(time.RFC3339Nano),
+				"outcomes": []interface{}{
+					map[string]interface{}{"id": "a", "title": "A", "color": "blue", "total_users": 10, "total_points": 100},
+					map[string]interface{}{"id": "b", "title": "B", "color": "pink", "total_users": 5, "total_points": 50},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("processPredictionChannel: %v", err)
+	}
+	if _, ok := client.predictions["ev-sync"]; !ok {
+		t.Fatalf("prediction must be registered before AfterFunc can race placePrediction")
+	}
+	if client.predictionTimers["ev-sync"] == nil {
+		t.Fatalf("expected a pending prediction timer")
 	}
 }

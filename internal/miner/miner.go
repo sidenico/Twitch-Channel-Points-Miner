@@ -465,12 +465,16 @@ func (m *Miner) run(ctx context.Context, streamers []string, useFollowers bool, 
 
 	tw, err := gql.NewTwitch(m.Username, gql.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer)
 	if err != nil {
-		return fmt.Errorf("failed to create twitch client: %w", err)
+		err = fmt.Errorf("failed to create twitch client: %w", err)
+		m.logger.Errorf("%v", err)
+		return err
 	}
 	tw.SetGameChangeHandler(m.handleGameChange)
 	m.twitch = tw
 	if err := m.twitch.Login(m.Username); err != nil {
-		return fmt.Errorf("login failed: %w", err)
+		err = fmt.Errorf("login failed: %w", err)
+		m.logger.Errorf("%v", err)
+		return err
 	}
 	m.loadWarmStartCache()
 	// TODO: Fix Available Campaigns
@@ -480,7 +484,9 @@ func (m *Miner) run(ctx context.Context, streamers []string, useFollowers bool, 
 	if useFollowers {
 		follows, err := m.twitch.GetFollowers(100, order)
 		if err != nil {
-			return fmt.Errorf("failed to load followers: %w", err)
+			err = fmt.Errorf("failed to load followers: %w", err)
+			m.logger.Errorf("%v", err)
+			return err
 		}
 		targets = follows
 	} else {
