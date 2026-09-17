@@ -1,0 +1,60 @@
+{
+  "username": "your-twitch-username",
+  "password": "",
+  "auto_update": false,
+  "debug": false,
+  "debug_deep": false,
+  "watch_queue_logging": false,
+  "smart_logging": true,
+  "disable_ssl_cert_verification": false,
+  "show_seconds": false,
+  "claim_drops_startup": true,
+  "claim_drops": true,
+  "claim_moments": true,
+  "betting(make_predictions)": true,
+  "follow_raid": true,
+  "community_goals": false,
+  "emojis": true,
+  "save_logs": true,
+  "show_username_in_console": false,
+  "show_claimed_bonus_msg": true,
+  "show_game": true,
+  "watch_streak_warm_start_cache": true,
+  "chat_presence": "ONLINE",
+  "disable_at_in_nickname": false,
+  "show_drops_progress": false,
+  "timezone": null,
+  "privacy": {
+    "anonymize_logs": false
+  },
+  "discord": {
+    "webhook_api": "",
+    "events": []
+  },
+  "streamers": [],
+  "streamers_exclude": [],
+  "game_priority": [],
+  "game_exclude": [],
+  "watch_priority": [
+    "STREAK",
+    "DROPS",
+    "ORDER"
+  ],
+  "streamer_overrides": {},
+  "bet": {
+    "strategy": null,
+    "percentage": null,
+    "percentage_gap": null,
+    "max_points": null,
+    "stealth_mode": null,
+    "deduct_stake_on_place": true,
+    "delay_mode": null,
+    "delay": null,
+    "minimum_points": null,
+    "filter_condition": {
+      "by": null,
+      "where": null,
+      "value": null
+    }
+  }
+}
