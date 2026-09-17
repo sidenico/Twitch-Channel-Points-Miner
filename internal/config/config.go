@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/constants"
-	"TwitchChannelPointsMiner/internal/notify"
 	"TwitchChannelPointsMiner/internal/persistence"
 	"TwitchChannelPointsMiner/internal/streamer"
 )
@@ -460,7 +459,11 @@ func LoadOrCreate(path string) (Config, error) {
 	return cfg, nil
 }
 
-func ApplyTimezoneOverride(raw *string, logger *notify.Logger) {
+type errorLogger interface {
+	Errorf(format string, args ...interface{})
+}
+
+func ApplyTimezoneOverride(raw *string, logger errorLogger) {
 	if raw == nil {
 		return
 	}
@@ -470,7 +473,9 @@ func ApplyTimezoneOverride(raw *string, logger *notify.Logger) {
 	}
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
-		logger.Errorf("%sTimezone override ignored; falling back to system time: %v%s", constants.ColorRed, err, constants.ColorReset)
+		if logger != nil {
+			logger.Errorf("%sTimezone override ignored; falling back to system time: %v%s", constants.ColorRed, err, constants.ColorReset)
+		}
 		return
 	}
 	time.Local = loc

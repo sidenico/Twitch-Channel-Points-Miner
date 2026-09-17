@@ -2,11 +2,7 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"os"
-	"os/exec"
-	"runtime"
 
 	"TwitchChannelPointsMiner/internal/config"
 	"TwitchChannelPointsMiner/internal/miner"
@@ -15,33 +11,8 @@ import (
 	"TwitchChannelPointsMiner/internal/update"
 )
 
-func clearConsole() {
-	var c *exec.Cmd
-	if runtime.GOOS == "windows" {
-		c = exec.Command("cmd", "/c", "cls")
-	} else {
-		c = exec.Command("clear")
-	}
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	_ = c.Run()
-}
-
-func setConsoleTitle(title string) {
-	if runtime.GOOS != "windows" {
-		return
-	}
-	cmd := exec.Command("cmd", "/c", fmt.Sprintf("title %s", title))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
-}
-
 // Run starts the miner lifecycle for the given config. Parent owns signal handling via ctx.
 func Run(ctx context.Context, cfg config.Config) error {
-	setConsoleTitle("Klaro's Twitch Miner")
-	clearConsole()
-
 	if cfg.AutoUpdate {
 		updated, err := update.RunAutoUpdate()
 		if err != nil {

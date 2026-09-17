@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -14,10 +17,36 @@ import (
 	"TwitchChannelPointsMiner/internal/config"
 )
 
+func clearConsole() {
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		c = exec.Command("cmd", "/c", "cls")
+	} else {
+		c = exec.Command("clear")
+	}
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	_ = c.Run()
+}
+
+func setConsoleTitle(title string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	cmd := exec.Command("cmd", "/c", fmt.Sprintf("title %s", title))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Run()
+}
+
 func main() {
 	configFlag := flag.String("config", "", "Path to config.json (default: ./config.json or next to the executable)")
 	dataDirFlag := flag.String("data-dir", "", "Directory for config/cookies/log (default: current directory if config.json exists; otherwise the executable directory)")
 	flag.Parse()
+
+	// Match historical startup order: clear console before config load/fallback logs.
+	setConsoleTitle("Klaro's Twitch Miner")
+	clearConsole()
 
 	hasOverride := *configFlag != "" || *dataDirFlag != "" || strings.TrimSpace(os.Getenv("TCPM_CONFIG")) != "" || strings.TrimSpace(os.Getenv("TCPM_DATA_DIR")) != ""
 	paths, err := config.ResolvePaths(*configFlag, *dataDirFlag)
