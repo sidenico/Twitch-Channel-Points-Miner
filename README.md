@@ -26,6 +26,45 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 
 When running a prebuilt binary, the miner uses `./config.json` if it exists in the current directory; otherwise it uses the directory containing the executable (so `config.json`, `cookies/`, and `log/` live next to the binary by default). Override with `-config`, `-data-dir`, `TCPM_CONFIG`, or `TCPM_DATA_DIR`.
 
+## Docker
+
+Persistent state (`config.json`, `cookies/`, `log/`) lives in a host directory mounted at `/data`.
+
+### First-time setup
+1) Create a data directory and copy the example config:
+```bash
+mkdir -p data
+cp docker/config.example.json data/config.json
+```
+2) Edit `data/config.json`: set `username`, keep `auto_update` as `false` (updates are handled by rebuilding the image), and configure streamers/options as usual.
+3) Build and complete the interactive Twitch device login (prints an activate code):
+```bash
+docker compose build
+docker compose run --rm miner
+```
+Open `https://www.twitch.tv/activate`, enter the code, and wait until login succeeds. Cookies are written to `data/cookies/<username>.json`.
+4) Run in the background:
+```bash
+docker compose up -d
+docker compose logs -f miner
+```
+
+### Useful commands
+```bash
+docker compose up -d --build   # rebuild after pulling code changes
+docker compose stop
+docker compose down
+```
+
+Optional environment overrides (see `docker-compose.yml`):
+- `TZ` — container timezone (default `UTC`)
+- `TCPM_HOST_DATA_DIR` — host path mounted as `/data` (default `./data`)
+
+If the container cannot write to `./data` (permission denied), fix ownership to match the image user (Alpine `miner`, typically UID/GID `100`):
+```bash
+sudo chown -R 100:100 data
+```
+
 ## Configuration (config.json)
 - `username`: Twitch login used for mining and for the cookie filename.
 - `password`: Optional; device login is used, so you can leave this as-is.

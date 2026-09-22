@@ -1,0 +1,16 @@
+services:
+  miner:
+    build: .
+    image: twitch-channel-points-miner:local
+    container_name: twitch-miner
+    restart: unless-stopped
+    environment:
+      TCPM_DATA_DIR: /data
+      # Optional IANA timezone for container clock (also configurable via config.json "timezone")
+      TZ: ${TZ:-UTC}
+    volumes:
+      # Persist config.json, cookies/, and log/ across restarts
+      - ${TCPM_HOST_DATA_DIR:-./data}:/data
+    # Needed so first-run device-code login is visible in the terminal
+    stdin_open: true
+    tty: true
